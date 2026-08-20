@@ -395,7 +395,9 @@ class SettingsWindow: NSWindow {
     private func setupSidebar() {
         setupSearchField(sidebarContainer)
         setupQuitButton(sidebarContainer)
+        #if !OSS
         setupUpgradeButton(sidebarContainer)
+        #endif
         setupSidebarTable(sidebarContainer)
         // Match macOS System Settings: Tab cycles between the search field and the sidebar
         // table only. The nextValidKeyView overrides on these two subclasses keep AppKit's
@@ -498,6 +500,11 @@ class SettingsWindow: NSWindow {
         sidebarScrollView.documentView = sidebarTableView
         sidebarScrollView.translatesAutoresizingMaskIntoConstraints = false
         parent.addSubview(sidebarScrollView)
+        #if OSS
+        let sidebarBottomConstraint = sidebarScrollView.bottomAnchor.constraint(equalTo: quitButton.topAnchor, constant: -10)
+        #else
+        let sidebarBottomConstraint = sidebarScrollView.bottomAnchor.constraint(equalTo: upgradeButton.topAnchor, constant: -10)
+        #endif
         NSLayoutConstraint.activate([
             sidebarScrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
             // The scroll view sits flush to the sidebar edges. The `.sourceList` selection style
@@ -507,7 +514,7 @@ class SettingsWindow: NSWindow {
             // too far in.
             sidebarScrollView.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
             sidebarScrollView.trailingAnchor.constraint(equalTo: parent.trailingAnchor),
-            sidebarScrollView.bottomAnchor.constraint(equalTo: upgradeButton.topAnchor, constant: -10),
+            sidebarBottomConstraint,
         ])
     }
 

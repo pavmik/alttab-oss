@@ -37,10 +37,13 @@ class Menubar {
         addMenuItem(NSLocalizedString("Show", comment: "Menubar option"), #selector(App.showUiFromShortcut0), "", "eye", nil, App.self)
         menu.addItem(NSMenuItem.separator())
         addMenuItem(NSLocalizedString("Settings…", comment: "Menubar option"), #selector(App.showSettingsWindow), ",", "gear", nil, App.self)
+        #if !OSS
         addMenuItem(NSLocalizedString("Check for updates…", comment: "Menubar option"), #selector(App.checkForUpdatesNow), "", "checkmark.arrow.trianglehead.clockwise", nil, App.self)
+        #endif
         addMenuItem(NSLocalizedString("Check permissions…", comment: "Menubar option"), #selector(App.checkPermissions), "", "hand.raised", nil, App.self)
         menu.addItem(NSMenuItem.separator())
         addMenuItem(String(format: NSLocalizedString("About %@", comment: "Menubar option. %@ is AltTab"), App.name), #selector(App.showAboutWindow), "", "info.circle", nil, App.self)
+        #if !OSS
         addMenuItem(NSLocalizedString("Debug tools", comment: "Menubar option"), #selector(App.showDebugWindow), "", "scope", nil, App.self)
         addMenuItem(NSLocalizedString("Send feedback…", comment: "Menubar option"), #selector(App.showFeedbackPanel), "", "text.bubble", nil, App.self)
         upgradeToProMenuItem = addMenuItem(NSLocalizedString("Get Pro", comment: "Menubar option"), App.upgradeToProAction, "", "star.fill", nil, App.self)
@@ -48,6 +51,7 @@ class Menubar {
         myAccountMenuItem = addMenuItem(NSLocalizedString("My Account", comment: ""), App.openAccountAction, "", "person.crop.circle", nil, App.self)
         supportProjectMenuItem = addMenuItem(NSLocalizedString("Support this project", comment: "Menubar option"), App.supportProjectAction, "", "heart.fill", .red, App.self)
         refreshLicenseMenuItems()
+        #endif
         menu.addItem(NSMenuItem.separator())
         addMenuItem(String(format: NSLocalizedString("Quit %@", comment: "%@ is AltTab"), App.name), #selector(NSApplication.terminate(_:)), "q", nil) // "xmark.rectangle" is not necessary; macos automatically recognizes Quit
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -60,12 +64,12 @@ class Menubar {
         // invalidates NSStatusBarContentView mid-FBS-scene-update — `_NSDetectedLayoutRecursion`.
         applyMenubarIconPreferences()
         observeRemovalFromMenubar()
-        #if DEBUG
+        #if DEBUG && !OSS
         installQAMenuMiddleClickMonitor()
         #endif
     }
 
-    #if DEBUG
+    #if DEBUG && !OSS
     private static var qaMenuMiddleClickMonitor: Any?
 
     // NSStatusBarButton doesn't forward `.otherMouseDown` to its action even when added to

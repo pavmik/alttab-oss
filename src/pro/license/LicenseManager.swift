@@ -89,15 +89,23 @@ class LicenseManager {
     }
 
     func initialize() {
+        #if OSS
+        state = .pro
+        #else
         state = computeState()
         scheduleAsyncRevalidationIfNeeded()
+        #endif
     }
 
     /// Trial `daysRemaining` is baked into the `state` enum, so it stays frozen until something
     /// reassigns `state`. Call this from UI surfaces before they read `state` so the day count
     /// reflects the current clock. `didSet` only fires when the value actually changed.
     func refreshState() {
+        #if OSS
+        let newState = LicenseState.pro
+        #else
         let newState = computeState()
+        #endif
         if newState != state { state = newState }
     }
 
