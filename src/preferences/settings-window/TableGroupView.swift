@@ -34,63 +34,47 @@ class TableGroupSetView: NSStackView {
         var continuousTableGroups = [NSView]()
         var continuousOthers = [NSView]()
         var lastViewWasTableGroup = false
+        // Consecutive views of the same kind share one wrapping stack. Each of these closes the run it
+        // owns and is a no-op on an empty run, so they can be called at every boundary unconditionally.
+        func flushTableGroups() {
+            addContinuousTableGroupsToSetViews(&continuousTableGroups,
+                                               views: &verticalViews,
+                                               tableGroupSpacing: tableGroupSpacing,
+                                               titleTableGroupSpacing: titleTableGroupSpacing,
+                                               horizontalPadding: padding,
+                                               topPadding: resolvedTopPadding)
+        }
+        func flushOthers() {
+            addContinuousOthersToSetViews(&continuousOthers,
+                                          views: &verticalViews,
+                                          othersSpacing: othersSpacing,
+                                          horizontalPadding: padding,
+                                          topPadding: resolvedTopPadding,
+                                          alignment: othersAlignment)
+        }
+        func addTools(_ views: [NSView]) {
+            addToolsViewToSetViews(views, views: &verticalViews, horizontalPadding: padding, topPadding: resolvedTopPadding, alignment: toolsAlignment)
+        }
         for view in originalViews {
             if view is TableGroupView {
-                if !lastViewWasTableGroup {
-                    // Only reset other views if we are switching from non-TableGroupView to TableGroupView
-                    addContinuousOthersToSetViews(&continuousOthers,
-                                                  views: &verticalViews,
-                                                  othersSpacing: othersSpacing,
-                                                  horizontalPadding: padding,
-                                                  topPadding: resolvedTopPadding,
-                                                  alignment: othersAlignment)
-                }
+                if !lastViewWasTableGroup { flushOthers() }
                 continuousTableGroups.append(view)
                 lastViewWasTableGroup = true
             } else if view is IllustratedImageThemeView {
                 lastViewWasTableGroup = false
-                addContinuousTableGroupsToSetViews(&continuousTableGroups,
-                                                   views: &verticalViews,
-                                                   tableGroupSpacing: tableGroupSpacing,
-                                                   titleTableGroupSpacing: titleTableGroupSpacing,
-                                                   horizontalPadding: padding,
-                                                   topPadding: resolvedTopPadding)
-                addContinuousOthersToSetViews(&continuousOthers,
-                                              views: &verticalViews,
-                                              othersSpacing: othersSpacing,
-                                              horizontalPadding: padding,
-                                              topPadding: resolvedTopPadding,
-                                              alignment: othersAlignment)
-                addToolsViewToSetViews([view], views: &verticalViews, horizontalPadding: padding, topPadding: resolvedTopPadding, alignment: toolsAlignment)
+                flushTableGroups()
+                flushOthers()
+                addTools([view])
             } else {
-                if lastViewWasTableGroup {
-                    // Only reset table group views if we are switching from TableGroupView to non-TableGroupView
-                    addContinuousTableGroupsToSetViews(&continuousTableGroups,
-                                                       views: &verticalViews,
-                                                       tableGroupSpacing: tableGroupSpacing,
-                                                       titleTableGroupSpacing: titleTableGroupSpacing,
-                                                       horizontalPadding: padding,
-                                                       topPadding: resolvedTopPadding)
-                }
+                if lastViewWasTableGroup { flushTableGroups() }
                 continuousOthers.append(view)
                 lastViewWasTableGroup = false
             }
         }
-        // Ensure any remaining views are added
-        addContinuousTableGroupsToSetViews(&continuousTableGroups,
-                                           views: &verticalViews,
-                                           tableGroupSpacing: tableGroupSpacing,
-                                           titleTableGroupSpacing: titleTableGroupSpacing,
-                                           horizontalPadding: padding,
-                                           topPadding: resolvedTopPadding)
-        addContinuousOthersToSetViews(&continuousOthers,
-                                      views: &verticalViews,
-                                      othersSpacing: othersSpacing,
-                                      horizontalPadding: padding,
-                                      topPadding: resolvedTopPadding,
-                                      alignment: othersAlignment)
+        flushTableGroups()
+        flushOthers()
         if let toolsViews {
-            addToolsViewToSetViews(toolsViews, views: &verticalViews, horizontalPadding: padding, topPadding: resolvedTopPadding, alignment: toolsAlignment)
+            addTools(toolsViews)
         }
         if let lastStackView = verticalViews.last {
             lastStackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -resolvedBottomPadding).isActive = true
@@ -188,6 +172,23 @@ class TableGroupView: ClickHoverStackView {
     static let rowIntraSpacing = CGFloat(5)
     static let cornerRadius = CGFloat(5)
     static let borderWidth = CGFloat(1)
+    /// Corner of the native `.primary` NSBox card, so row hovers and masked containers clip to it.
+    /// Measured on macOS 27 (12pt continuous, like System Settings); older releases draw a tighter group box.
+    static let cardCornerRadius: CGFloat = {
+        if #available(macOS 26.0, *) { return 12 }
+        return cornerRadius
+    }()
+
+    /// The native group box AppKit draws behind System Settings-style forms. It adapts to Dark/Light
+    /// and to the OS release on its own.
+    static func makeCard() -> NSBox {
+        let card = NSBox()
+        card.boxType = .primary
+        card.titlePosition = .noTitle
+        card.contentViewMargins = .zero
+        card.translatesAutoresizingMaskIntoConstraints = false
+        return card
+    }
 
     var title: String?
     var subTitle: String?
@@ -219,7 +220,6 @@ class TableGroupView: ClickHoverStackView {
         var nextSeparator: NSView?
 
         var leftViews: [NSView]?
-        var rightViews: [NSView]?
 
         init(view: NSView, previousSeparator: NSView? = nil, nextSeparator: NSView? = nil) {
             self.view = view
@@ -250,7 +250,7 @@ class TableGroupView: ClickHoverStackView {
         if hasHeader {
             setupHeaderView()
         }
-        setupTableView()
+        addNewTable()
     }
 
     private func setupTitleView() {
@@ -311,33 +311,14 @@ class TableGroupView: ClickHoverStackView {
         headerStackView.trailingAnchor.constraint(equalTo: trailingAnchor).isActive = true
     }
 
-    private func setupTableView() {
-        addNewTable()
-    }
-
-    func addHeader(views: [NSView]) {
-        headerStackView.setViews(views, in: .leading)
-    }
-
     @discardableResult
     func addNewTable() -> NSStackView {
         let tableStackView = NSStackView()
         tableStackView.orientation = .vertical
         tableStackView.spacing = 0
         tableStackView.translatesAutoresizingMaskIntoConstraints = false
-        // An NSBox painted behind the rows draws the rounded card (fill + border). Its fillColor/
-        // borderColor are dynamic NSColors, so AppKit re-resolves them for Dark/Light on its own —
-        // no draw() override, no manual repaint. The box is a background sibling (not the rows'
-        // container) so the rows stack keeps driving the card's size.
-        let card = NSBox()
-        card.boxType = .custom
-        card.titlePosition = .noTitle
-        card.cornerRadius = TableGroupView.cornerRadius
-        card.borderWidth = TableGroupView.borderWidth
-        card.borderColor = .tableBorderColor
-        card.fillColor = .tableBackgroundColor
-        card.contentViewMargins = .zero
-        card.translatesAutoresizingMaskIntoConstraints = false
+        // The card is a background sibling (not the rows' container) so the rows stack keeps driving its size.
+        let card = TableGroupView.makeCard()
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(card)
@@ -376,7 +357,7 @@ class TableGroupView: ClickHoverStackView {
     }
 
     @discardableResult
-    func addRow(tableIndex: Int = -1, leftText: String? = nil, rightViews: [NSView]? = nil, subText: String? = nil,
+    func addRow(leftText: String? = nil, rightViews: [NSView]? = nil, subText: String? = nil,
                 isAddSeparator: Bool = true,
                 onClick: EventClosure? = nil,
                 onMouseEntered: EventClosure? = nil,
@@ -393,9 +374,7 @@ class TableGroupView: ClickHoverStackView {
         }
         let rowInfo = RowInfo(view: rowView)
         rowInfo.leftViews = leftViews
-        rowInfo.rightViews = rightViews
-        let tableStackView = tableIndex == -1 ? tableStackViews[tableStackViews.count - 1] : tableStackViews[tableIndex]
-        finalizeRow(tableStackView: tableStackView, rowInfo: rowInfo, rowView: rowView, isAddSeparator: isAddSeparator,
+        finalizeRow(rowInfo: rowInfo, rowView: rowView, isAddSeparator: isAddSeparator,
             onClick: onClick, onMouseEntered: onMouseEntered, onMouseExited: onMouseExited)
         rowInfoTables[rowInfoTables.count - 1].append(rowInfo)
         updateRowCornerRadius()
@@ -403,7 +382,7 @@ class TableGroupView: ClickHoverStackView {
     }
 
     @discardableResult
-    func addRow(tableIndex: Int = -1, leftViews: [NSView]? = nil, rightViews: [NSView]? = nil, secondaryViews: [NSView]? = nil,
+    func addRow(leftViews: [NSView]? = nil, rightViews: [NSView]? = nil, secondaryViews: [NSView]? = nil,
                 isAddSeparator: Bool = true,
                 secondaryViewsOrientation: NSUserInterfaceLayoutOrientation = .horizontal,
                 secondaryViewsAlignment: NSLayoutConstraint.Attribute = .leading,
@@ -421,18 +400,17 @@ class TableGroupView: ClickHoverStackView {
         }
         let rowInfo = RowInfo(view: rowView)
         rowInfo.leftViews = leftViews
-        rowInfo.rightViews = rightViews
-        let tableStackView = tableIndex == -1 ? tableStackViews[tableStackViews.count - 1] : tableStackViews[tableIndex]
-        finalizeRow(tableStackView: tableStackView, rowInfo: rowInfo, rowView: rowView, isAddSeparator: isAddSeparator,
+        finalizeRow(rowInfo: rowInfo, rowView: rowView, isAddSeparator: isAddSeparator,
             onClick: onClick, onMouseEntered: onMouseEntered, onMouseExited: onMouseExited)
         rowInfoTables[rowInfoTables.count - 1].append(rowInfo)
         updateRowCornerRadius()
         return rowInfo
     }
 
-    private func finalizeRow(tableStackView: NSStackView, rowInfo: RowInfo, rowView: ClickHoverStackView, isAddSeparator: Bool,
+    /// Rows always go to the table opened last: `addNewTable` is what starts a new one.
+    private func finalizeRow(rowInfo: RowInfo, rowView: ClickHoverStackView, isAddSeparator: Bool,
                              onClick: EventClosure?, onMouseEntered: EventClosure?, onMouseExited: EventClosure?) {
-        rowInfo.previousSeparator = addSeparatorIfNeeded(tableStackView: tableStackView, isAddSeparator: isAddSeparator)
+        rowInfo.previousSeparator = addSeparatorIfNeeded(isAddSeparator: isAddSeparator)
         tableStackViews.last?.addArrangedSubview(rowView)
         setRowViewEvents(rowView, onClick: onClick, onMouseEntered: onMouseEntered, onMouseExited: onMouseExited)
     }
@@ -447,6 +425,7 @@ class TableGroupView: ClickHoverStackView {
         // per appearance on its own; we only toggle its visibility on enter/exit. The row layer
         // clips it to the table's rounded corners (see updateRowCornerRadius).
         rowView.layer?.masksToBounds = true
+        rowView.layer?.cornerCurve = .continuous
         let hover = NSBox()
         hover.boxType = .custom
         hover.titlePosition = .noTitle
@@ -490,7 +469,9 @@ class TableGroupView: ClickHoverStackView {
         let spacer = NSView() // Spacer to fill the middle space
         let leftStackView = NSStackView()
         leftStackView.orientation = .horizontal
-        leftStackView.alignment = .leading
+        // Centered, not left to chance: the stack can come out as tall as the row's controls, and then a label
+        // with no vertical alignment sat at its top, a few points above the control beside it.
+        leftStackView.alignment = .centerY
         leftStackView.spacing = TableGroupView.spacing
         if let leftViews {
             leftStackView.setViews(leftViews, in: .leading)
@@ -568,17 +549,24 @@ class TableGroupView: ClickHoverStackView {
         }
     }
 
-    private func addSeparatorIfNeeded(tableStackView: NSStackView, isAddSeparator: Bool = true) -> NSView? {
+    private func addSeparatorIfNeeded(isAddSeparator: Bool = true) -> NSView? {
         guard !rowInfoTables[rowInfoTables.count - 1].isEmpty else { return nil }
-        guard isAddSeparator else { return nil }
-        // NSBox with a dynamic fillColor, so AppKit re-resolves the separator color per appearance.
-        let separator = NSBox()
-        separator.boxType = .custom
-        separator.titlePosition = .noTitle
-        separator.borderWidth = 0
-        separator.fillColor = .tableSeparatorColor
-        separator.contentViewMargins = .zero
+        guard isAddSeparator, let tableStackView = tableStackViews.last else { return nil }
+        let line = NSBox()
+        line.boxType = .separator
+        line.translatesAutoresizingMaskIntoConstraints = false
+        // System Settings draws its row separators at half the strength of the stock separator. The fade
+        // goes on a wrapper: an NSBox given an alphaValue below 1 before it's laid out never draws its line.
+        let separator = NSView()
+        separator.alphaValue = 0.5
         separator.translatesAutoresizingMaskIntoConstraints = false
+        separator.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.topAnchor.constraint(equalTo: separator.topAnchor),
+            line.bottomAnchor.constraint(equalTo: separator.bottomAnchor),
+            line.leadingAnchor.constraint(equalTo: separator.leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: separator.trailingAnchor),
+        ])
         tableStackView.addArrangedSubview(separator)
         separator.heightAnchor.constraint(equalToConstant: TableGroupView.borderWidth).isActive = true
         separator.centerXAnchor.constraint(equalTo: tableStackView.centerXAnchor).isActive = true
@@ -644,34 +632,21 @@ class TableGroupView: ClickHoverStackView {
     }
 
     private func updateRowCornerRadius() {
+        let cornerRadius = TableGroupView.cardCornerRadius
         rowInfoTables.forEach { table in
             for (index, rowInfo) in table.enumerated() {
-                if #available(macOS 10.13, *) {
-                    if table.count == 1 {
-                        rowInfo.view.layer?.cornerRadius = TableGroupView.cornerRadius
-                        rowInfo.view.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner, .layerMinXMinYCorner, .layerMaxXMinYCorner]
-                    } else if index == 0 {
-                        rowInfo.view.layer?.cornerRadius = TableGroupView.cornerRadius
-                        rowInfo.view.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-                    } else if index == table.count - 1 {
-                        rowInfo.view.layer?.cornerRadius = TableGroupView.cornerRadius
-                        rowInfo.view.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-                    } else {
-                        rowInfo.view.layer?.cornerRadius = 0
-                        rowInfo.view.layer?.maskedCorners = []
-                    }
+                if table.count == 1 {
+                    rowInfo.view.layer?.cornerRadius = cornerRadius
+                    rowInfo.view.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner, .layerMinXMinYCorner, .layerMaxXMinYCorner]
+                } else if index == 0 {
+                    rowInfo.view.layer?.cornerRadius = cornerRadius
+                    rowInfo.view.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+                } else if index == table.count - 1 {
+                    rowInfo.view.layer?.cornerRadius = cornerRadius
+                    rowInfo.view.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
                 } else {
-                    if index == 0 {
-                        // Degraded experience, rounded corners will appear in the lower left and lower right corners.
-                        rowInfo.view.layer?.cornerRadius = TableGroupView.cornerRadius
-                    }
-                    if index == table.count - 1 {
-                        // Degraded experience, rounded corners will appear in the upper left and upper right corners.
-                        rowInfo.view.layer?.cornerRadius = TableGroupView.cornerRadius
-                    }
-                    if 0 < index && index < table.count - 1 {
-                        rowInfo.view.layer?.cornerRadius = 0
-                    }
+                    rowInfo.view.layer?.cornerRadius = 0
+                    rowInfo.view.layer?.maskedCorners = []
                 }
             }
         }

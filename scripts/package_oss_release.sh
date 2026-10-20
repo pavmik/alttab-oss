@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-version="11.5.0"
+version="11.9.2"
 build_dir="${OSS_BUILD_DIR:-$PWD/DerivedData-OSS}"
 output_dir="${OSS_OUTPUT_DIR:-$PWD/dist}"
 staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/alttab-oss-dmg.XXXXXX")"

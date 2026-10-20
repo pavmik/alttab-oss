@@ -4,6 +4,8 @@ AltTab OSS is an unofficial fork of [AltTab for macOS](https://github.com/lwouis
 
 This fork keeps the original AltTab experience while providing an unrestricted open-source build under the GNU General Public License v3.0. It uses the separate app name `AltTab OSS` and bundle identifier `com.frekr.alttab-oss`, so it can be tested independently from the official app.
 
+The current fork is based on upstream **11.9.2**.
+
 ## Install
 
 Download the DMG from [Releases](https://github.com/pavmik/alttab-oss/releases), open it, and drag `AltTab OSS.app` to Applications. Release builds support Apple Silicon and Intel on macOS 12 or later.
@@ -34,7 +36,7 @@ xcodebuild \
   OTHER_CODE_SIGN_FLAGS= \
   MACOSX_DEPLOYMENT_TARGET=12.0 \
   SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
-  CURRENT_PROJECT_VERSION=11.5.0
+  CURRENT_PROJECT_VERSION=11.9.2
 open "DerivedData/Build/Products/Debug/AltTab OSS.app"
 ```
 
@@ -43,6 +45,19 @@ For a universal optimized build and DMG, run `bash scripts/package_oss_release.s
 macOS will ask for Accessibility permission because a window switcher needs it to inspect and focus windows. Ad-hoc signing may cause macOS to ask for permission again after a rebuild.
 
 The upstream repository also includes `scripts/codesign/setup_local.sh`, which creates a stable local self-signed identity for development builds. Review the script before running it because it changes your Keychain trust settings.
+
+## Validation
+
+Run upstream unit tests with `bash ai/test.sh`, adding local signing overrides if needed. To check that an expired trial or stored license cannot lock OSS features or trigger validation, run:
+
+```sh
+xcodebuild test -project alt-tab-macos.xcodeproj -scheme Test -configuration Debug \
+  -derivedDataPath DerivedData-OSSTests CODE_SIGN_IDENTITY=- OTHER_CODE_SIGN_FLAGS= \
+  CURRENT_PROJECT_VERSION=11.9.2 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG OSS' \
+  -only-testing:unit-tests/OSSLicenseManagerTests
+```
+
+For standard Gatekeeper installation on other Macs, a distribution build needs the fork publisher's own Developer ID Application certificate, hardened runtime, a secure timestamp, and successful Apple notarization. The current packages are ad-hoc signed and do not meet that distribution requirement. A self-signed certificate does not replace Developer ID and notarization.
 
 ## Differences from upstream
 

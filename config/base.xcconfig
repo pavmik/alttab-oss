@@ -3,10 +3,8 @@
 PRODUCT_NAME = AltTab OSS
 PRODUCT_BUNDLE_IDENTIFIER = com.frekr.alttab-oss
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) OSS
-// 10.14.4 is where the Swift 5 runtime starts shipping in macOS. Below it, Xcode embeds ~11MB of
-// libswift*.dylib for the x86_64 slice (arm64 never needs them, its floor is 11.0). Keep the value
-// bare: scripts/update_appcast.sh awk-splits this line to fill sparkle:minimumSystemVersion.
-MACOSX_DEPLOYMENT_TARGET = 10.14.4
+// Keep the value bare: scripts/update_appcast.sh reads this deployment target.
+MACOSX_DEPLOYMENT_TARGET = 12.0
 SWIFT_VERSION = 5.8 // xcode 14.2 translates this to 5.0; xcode 16.2 as 5.8
 SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
 INFOPLIST_FILE = Info.plist
@@ -17,6 +15,7 @@ ENABLE_HARDENED_RUNTIME = YES // for notarization
 APPLY_RULES_IN_COPY_FILES = YES
 INFOPLIST_OUTPUT_FORMAT = binary
 PLIST_FILE_OUTPUT_FORMAT = binary
+STRINGS_FILE_OUTPUT_ENCODING = UTF-8
 CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES
 SWIFT_OBJC_BRIDGING_HEADER = alt-tab-macos-Bridging-Header.h
 CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES

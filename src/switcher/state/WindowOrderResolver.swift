@@ -3,8 +3,7 @@ import Foundation
 /// Decides the display order of windows in the switcher. When a search query is active, ranks by
 /// match-then-relevance; otherwise applies the user's chosen order (recently-focused / recently-created
 /// / alphabetical / by-space), after pushing any "show at the end" buckets (windowless / hidden /
-/// minimized) to the back, with a stable `lastFocusOrder` tiebreak. Pure kernel — mirrors the original
-/// `Windows.sort` closure term-for-term.
+/// minimized) to the back, with a stable `lastFocusOrder` tiebreak. Pure kernel.
 ///
 /// `OrderWindow` bundles the canonical `WindowState` + `ApplicationState` for a window with its
 /// **query-derived** search rank (`searchMatches` / `searchRelevance`) — that bundling earns its
@@ -21,8 +20,37 @@ struct OrderWindow: Equatable {
     let searchRelevance: Double   // Search.relevance
 }
 
+struct ApplicationRepresentativeCandidate: Equatable {
+    let id: String
+    let isCurrentAttention: Bool
+    let isLastAttention: Bool
+    let isMainWindow: Bool
+    let lastFocusOrder: Int
+    let creationOrder: Int
+}
+
+enum ApplicationRepresentativeResolver {
+    static func pick(_ candidates: [ApplicationRepresentativeCandidate], stableId: String?) -> String? {
+        guard !candidates.isEmpty else { return nil }
+        if let current = best(candidates.filter { $0.isCurrentAttention }) { return current.id }
+        if let stableId, candidates.contains(where: { $0.id == stableId }) { return stableId }
+        if let attended = best(candidates.filter { $0.isLastAttention }) { return attended.id }
+        if let main = best(candidates.filter { $0.isMainWindow }) { return main.id }
+        return best(candidates)?.id
+    }
+
+    private static func best(_ candidates: [ApplicationRepresentativeCandidate])
+        -> ApplicationRepresentativeCandidate? {
+        candidates.min {
+            if $0.lastFocusOrder != $1.lastFocusOrder { return $0.lastFocusOrder < $1.lastFocusOrder }
+            if $0.creationOrder != $1.creationOrder { return $0.creationOrder > $1.creationOrder }
+            return $0.id < $1.id
+        }
+    }
+}
+
 enum WindowOrderResolver {
-    /// Strict-weak-ordering "should `a` sort before `b`?", mirroring the original `Windows.sort` closure.
+    /// Strict-weak-ordering "should `a` sort before `b`?"
     static func isOrderedBefore(_ a: OrderWindow, _ b: OrderWindow,
                                 searchActive: Bool = false,
                                 windowlessAtEnd: Bool = false,   // showWindowlessApps == .showAtTheEnd
@@ -54,6 +82,10 @@ enum WindowOrderResolver {
                 order = .orderedDescending
             } else if let s0 = a.state.spaceIndexes.first, let s1 = b.state.spaceIndexes.first {
                 order = intOrder(s0, s1)
+            } else if a.state.spaceIndexes.first != nil {
+                order = .orderedAscending
+            } else if b.state.spaceIndexes.first != nil {
+                order = .orderedDescending
             }
             if order == .orderedSame {
                 order = compareByAppNameThenTitle(a, b)

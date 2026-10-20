@@ -22,20 +22,13 @@ class CGSCallScheduler {
     static var debugQueue: LabeledOperationQueue { queue }
     #endif
 
+    static var pendingCallCount: Int { queue.operations.count }
+
     /// Run an arbitrary blocking WindowServer/SkyLight read off-main on this lane (isolated from the AX
     /// pools). For the multi-call reads — the bulk discovery snapshot + Space topology + per-window state
     /// query — that dispatch their own result back to main. Fire-and-forget; callers may be on any thread.
     static func run(_ block: @escaping () -> Void) {
         queue.addOperation(block)
-    }
-
-    /// The Space(s) a window currently belongs to. Fetched off-main, delivered on main. nil = no answer;
-    /// see `rawWindowSpaces` for why an EMPTY answer is not the same thing and is not evidence on its own.
-    static func windowSpaces(_ wid: CGWindowID, thenMain: @escaping ([CGSSpaceID]?) -> Void) {
-        queue.addOperation {
-            let spaceIds = rawWindowSpaces(wid)
-            DispatchQueue.main.async { thenMain(spaceIds) }
-        }
     }
 
     /// Synchronous form for callers ALREADY off-main: the Space(s) a single window belongs to. Used by the

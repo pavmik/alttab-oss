@@ -20,6 +20,11 @@ final class QAMenu: NSPanel {
         UserDefaults.standard.bool(forKey: openSettingsOnLaunchKey)
     }
 
+    /// Not shown in a lifecycle session, nor with `--qa-no-menu`: automated runs drive the real desktop with
+    /// synthetic clicks, and this panel floats over every app on every Space, where the clicks can land on it
+    /// instead.
+    static var suppressed: Bool { QaLifecycle.enabled || CommandLine.arguments.contains("--qa-no-menu") }
+
     static var graphEnabled: Bool {
         UserDefaults.standard.bool(forKey: graphEnabledKey)
     }
@@ -72,11 +77,7 @@ final class QAMenu: NSPanel {
             let index = (sender as! NSPopUpButton).indexOfSelectedItem
             UserDefaults.standard.set(String(index), forKey: "language")
             CachedUserDefaults.removeFromCache("language")
-            if Preferences.language == .systemDefault {
-                UserDefaults.standard.removeObject(forKey: "AppleLanguages")
-            } else {
-                UserDefaults.standard.set([Preferences.language.appleLanguageCode!], forKey: "AppleLanguages")
-            }
+            Preferences.language.applyToAppleLanguages()
             App.restart()
         }
         let settingsButton = NSButton(title: "Settings…", target: nil, action: nil)
@@ -211,6 +212,7 @@ final class QAMenu: NSPanel {
                 Day1WelcomeLetterWindow.shared = nil
                 Day1WelcomeLetterWindow.show(forceFreshInstall: false)
             },
+            makeButton("1 Onboarding") { _ = OnboardingPopover.show(trialDaysToAnnounce: LicenseManager.trialDuration) },
             makeButton("4 Tour") { Day4TourPopover.show() },
             makeButton("12 HeadsUp") { Day12HeadsUpPopover.show() },
         ])
@@ -234,7 +236,10 @@ final class QAMenu: NSPanel {
         showRow3.orientation = .horizontal
         showRow3.spacing = 4
         proSectionContent.addArrangedSubview(showRow3)
-        proSectionContent.setCustomSpacing(Self.sectionSpacing, after: showRow3)
+        let searchHintButton = makeButton("Show search hint") { SearchDiscoveryHint.shared.showForQA() }
+        searchHintButton.toolTip = "Show once on the next Alt-Tab. Hold Alt for one second."
+        proSectionContent.addArrangedSubview(searchHintButton)
+        proSectionContent.setCustomSpacing(Self.sectionSpacing, after: searchHintButton)
 
         proSectionContent.addArrangedSubview(sectionLabel("Reset:"))
         let resetRow1 = NSStackView(views: [
@@ -271,7 +276,7 @@ final class QAMenu: NSPanel {
 
     /// Mock passage of time to a specific day. Resets transition state and marks earlier prompts
     /// as already seen so they don't re-fire. Mock Day 15 lands on the post-trial *grace* period
-    /// (trial expired, no Day15 window shown yet) so QA can click `Day15 Proactive` or
+    /// (trial expired, no Day15 window shown yet) so a tester can click `Day15 Proactive` or
     /// `Day15 FullUpgrade` to exercise each path, then observe the locked state after.
     private static func mockDay(_ day: Int) {
         let mgr = ProTransitionManager.shared

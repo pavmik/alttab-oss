@@ -20,14 +20,14 @@ final class Search {
     }
 
     private static func ensureCache(for window: Window, normalizedQuery normalized: String, originalQuery: String) {
-        let cacheKey = normalized + "|3"
+        let cacheKey = normalized + "|3|" + originalQuery
         if window.lastSearchQuery == cacheKey { return }
         let appName = window.application.localizedName ?? ""
         let title = window.title
         let appResult = SearchTestable.tierMatch(query: originalQuery, text: appName)
         let titleResult = SearchTestable.tierMatch(query: originalQuery, text: title)
-        window.swAppResults = appResult.map { [$0.toSWResult()] } ?? []
-        window.swTitleResults = titleResult.map { [$0.toSWResult()] } ?? []
+        window.swAppMatchSpan = appResult?.span
+        window.swTitleMatchSpan = titleResult?.span
         let appScore = Double(appResult?.score ?? 0)
         let titleScore = Double(titleResult?.score ?? 0)
         window.swBestSimilarity = max(appScore * 1.02, titleScore)

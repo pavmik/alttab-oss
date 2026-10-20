@@ -99,19 +99,8 @@ class ExceptionEditorView: NSView {
         patternsRow.trailingAnchor.constraint(equalTo: rows.trailingAnchor).isActive = true
         addToGroup(rows, view: ignoreRow, addSeparator: true)
 
-        // An NSBox painted behind the rows draws the rounded card. Its `fillColor`/`borderColor`
-        // are dynamic NSColors, so AppKit re-resolves them for Dark/Light on every redraw on its
-        // own — no appearance observing, no manual repaint, no baked `.cgColor`. The box is a
-        // background sibling (not the rows' container) so the stack drives the card's size.
-        let card = NSBox()
-        card.boxType = .custom
-        card.titlePosition = .noTitle
-        card.cornerRadius = 8
-        card.borderWidth = 1
-        card.borderColor = .tableSeparatorColor
-        card.fillColor = .tableBackgroundColor
-        card.contentViewMargins = .zero
-        card.translatesAutoresizingMaskIntoConstraints = false
+        // The card is a background sibling (not the rows' container) so the stack drives its size.
+        let card = TableGroupView.makeCard()
 
         let group = NSView()
         group.translatesAutoresizingMaskIntoConstraints = false
@@ -234,7 +223,7 @@ class ExceptionEditorView: NSView {
         removeButton.bezelStyle = .circular
         removeButton.isBordered = false
         removeButton.image = NSImage.fromSymbol(.minusCircleFill, pointSize: 14)
-        if #available(macOS 10.14, *) { removeButton.contentTintColor = .tertiaryLabelColor }
+        removeButton.contentTintColor = .tertiaryLabelColor
         removeButton.imagePosition = .imageOnly
         removeButton.target = self
         removeButton.action = #selector(removePatternTapped(_:))
@@ -312,9 +301,9 @@ class ExceptionEditorView: NSView {
     }
 
     private func resolveHeaderAsync(for bundleId: String) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let info = AppDisplayInfo.resolve(bundleId: bundleId)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
                 guard let self, self.entry.bundleIdentifier == bundleId else { return }
                 self.headerIconView.image = info.icon
                 self.headerNameLabel.stringValue = info.name

@@ -124,7 +124,7 @@ class Menubar {
     // The callout is only useful when the user lacks Screen Recording AND has settings that need it
     // (Thumbnails style or window previews). Users who skipped the permission but use neither aren't
     // nagged (see #5623). Its copy names whichever of the two features are actually affected, so we
-    // refresh the text before showing it. Re-evaluated on permission ticks and on each menu open
+    // refresh the text before showing it. Re-evaluated on permission checks and on each menu open
     // (settings can change). Decision logic lives in `PermissionCalloutResolver` (unit-tested).
     static func refreshPermissionCallout() {
         let dependentFeatures = Preferences.screenRecordingDependentFeatures
@@ -163,7 +163,7 @@ class Menubar {
     /// Assigning the menu only for the duration of a synthesized click keeps the branch above while
     /// letting AppKit position the menu and highlight the icon. Clearing `menu` on the next line is
     /// safe because `performClick` doesn't return until menu tracking ends.
-    private static func popUpMenu() {
+    static func popUpMenu() {
         statusItem.menu = menu
         statusItem.button!.performClick(nil)
         statusItem.menu = nil
@@ -205,18 +205,14 @@ class Menubar {
 
     /// `NSStatusBar.system.thickness`: the status item working area, 22pt on every macOS so far
     /// (the visible menubar is taller since Tahoe, but items stay in a centred 22pt band).
-    /// The artwork is authored at 44pt. Handed over at that size it makes the button 44pt tall,
-    /// and macOS then draws the selection as a tall block overflowing the strip instead of the pill
-    /// every other menubar app gets. Any size <= 22 avoids that and renders identically, because
-    /// `.scaleProportionallyUpOrDown` below refits the image into the 22pt button either way. 22 is
-    /// the one that stays correct if that scaling mode ever changes: 44pt artwork at 22pt is an
-    /// exact 2:1 downscale, so one artboard unit is one device pixel on a retina display.
+    /// Keep the image's logical size at 22pt so the selection pill stays inside that band.
+    /// The vector PDFs render at the screen's backing scale without changing the button's size.
     private static let iconSize = CGFloat(22)
 
     static private func loadPreferredIcon() {
         let i = Preferences.menubarIcon.indexAsString
         let image = NSImage(named: "menubar-\(i)")!
-        image.isTemplate = i != "2"
+        image.isTemplate = Preferences.menubarIcon.isTemplate
         image.size = NSSize(width: iconSize, height: iconSize)
         statusItem.button!.image = image
         statusItem.isVisible = true
@@ -253,11 +249,6 @@ class Menubar {
         buttonLayer.addSublayer(dot)
         badgeDotLayer = dot
     }
-
-    static func showPopoverFromMenubar(_ popover: NSPopover) {
-        guard let button = statusItem?.button else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-    }
 }
 
 class UpgradeMenuItemView: NSView {
@@ -273,7 +264,6 @@ class UpgradeMenuItemView: NSView {
     private let backdrop = NSView()
     private var highlightObservation: NSKeyValueObservation?
     private let gradientLayer = ProGradient.makeLayer()
-    private var isShining = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -297,7 +287,7 @@ class UpgradeMenuItemView: NSView {
         let icon = NSImageView()
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.image = NSImage.fromSymbol(.starFill, pointSize: 11)
-        if #available(macOS 10.14, *) { icon.contentTintColor = .white }
+        icon.contentTintColor = .white
         icon.setContentHuggingPriority(.required, for: .horizontal)
         icon.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSubview(icon)
@@ -326,12 +316,14 @@ class UpgradeMenuItemView: NSView {
         fatalError("Class only supports programmatic initialization")
     }
 
+    override var intrinsicContentSize: NSSize {
+        let labelSize = label.intrinsicContentSize
+        return NSSize(width: NSView.noIntrinsicMetric, height: ceil(labelSize.height) + 6)
+    }
+
     override func layout() {
         super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gradientLayer.frame = backdrop.bounds
-        CATransaction.commit()
+        caTransaction { gradientLayer.frame = backdrop.bounds }
     }
 
     override func viewDidMoveToWindow() {
@@ -354,32 +346,7 @@ class UpgradeMenuItemView: NSView {
     }
 
     private func playShineAnimation() {
-        guard !isShining else { return }
-        let pillBounds = gradientLayer.bounds
-        let shine = CAGradientLayer()
-        shine.colors = [
-            NSColor.white.withAlphaComponent(0).cgColor,
-            NSColor.white.withAlphaComponent(0.3).cgColor,
-            NSColor.white.withAlphaComponent(0).cgColor,
-        ]
-        shine.locations = [0, 0.5, 1]
-        shine.startPoint = CGPoint(x: 0, y: 0.5)
-        shine.endPoint = CGPoint(x: 1, y: 0.5)
-        shine.frame = CGRect(x: -pillBounds.width, y: 0, width: pillBounds.width, height: pillBounds.height)
-        gradientLayer.addSublayer(shine)
-        isShining = true
-        let animation = CABasicAnimation(keyPath: "position.x")
-        animation.fromValue = -pillBounds.width / 2
-        animation.toValue = pillBounds.width + pillBounds.width / 2
-        animation.duration = 0.6
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
-            shine.removeFromSuperlayer()
-            self?.isShining = false
-        }
-        shine.add(animation, forKey: "shine")
-        CATransaction.commit()
+        ProGradient.playShine(over: gradientLayer)
     }
 
     func updateContent(_ state: LicenseState) {
@@ -407,6 +374,9 @@ class UpgradeMenuItemView: NSView {
         result.append(NSAttributedString(string: "\n", attributes: mainAttrs))
         result.append(NSAttributedString(string: NSLocalizedString("Get Pro", comment: "Menubar option"), attributes: mainAttrs))
         label.attributedStringValue = result
+        invalidateIntrinsicContentSize()
+        let height = intrinsicContentSize.height
+        if frame.height != height { frame.size.height = height }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -459,8 +429,7 @@ class PermissionCallout: StackView {
         let location = convert(event.locationInWindow, from: nil)
         guard button.frame.contains(location) else { return }
         enclosingMenuItem?.menu?.cancelTracking()
-        Preferences.remove("screenRecordingPermissionSkipped")
-        App.restart()
+        PermissionsWindow.grantScreenRecording()
     }
 
     // Name only the feature(s) the user actually enabled, so we never promise back a feature they

@@ -1,4 +1,5 @@
 import Cocoa
+import UniformTypeIdentifiers
 
 class ExceptionsTab {
     private static let sidebarWidth = CGFloat(280)
@@ -9,7 +10,6 @@ class ExceptionsTab {
     private static let editorTopBottomPadding = TableGroupView.padding
     private static let editorHorizontalPadding = TableGroupView.padding
     private static var editorWidth: CGFloat { SettingsWindow.contentWidth - sidebarWidth - 1 }
-    private static var editorContentWidth: CGFloat { editorWidth - 2 * editorHorizontalPadding }
 
     private static var items: [ExceptionEntry] = []
     private static var selectedIndex = -1
@@ -20,6 +20,7 @@ class ExceptionsTab {
     private static var sidebarSection: SidebarListContainer?
     private static var editorView: ExceptionEditorView!
     private static var countButtons: NSSegmentedControl?
+    private static var searchContentRefreshScheduled = false
 
     static func initTab() -> NSView {
         items = Preferences.exceptions
@@ -33,10 +34,7 @@ class ExceptionsTab {
     }
 
     static func cleanup() {
-        if let observer = rowsScrollObserver {
-            NotificationCenter.default.removeObserver(observer)
-            rowsScrollObserver = nil
-        }
+        NotificationCenter.default.removeObserver(&rowsScrollObserver)
         items.removeAll()
         rows.removeAll()
         selectedIndex = -1
@@ -73,28 +71,12 @@ class ExceptionsTab {
                 selectIndex(next)
             }
         }
-        let rows = NSStackView()
-        rows.orientation = .vertical
-        rows.alignment = .leading
-        rows.spacing = 0
-        rows.translatesAutoresizingMaskIntoConstraints = false
+        let list = makeSidebarRowsList()
+        let rows = list.rows
+        let scrollView = list.scrollView
         rowsStack = rows
-
-        let scrollView = ForwardingVerticalScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
-        scrollView.verticalScrollElasticity = .none
-        scrollView.hasHorizontalScroller = false
-        scrollView.scrollerStyle = .overlay
-        scrollView.usesPredominantAxisScrolling = true
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        let documentView = ForwardingVerticalDocumentView(frame: .zero)
-        documentView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = documentView
-        documentView.addSubview(rows)
         rowsScrollView = scrollView
-        installHoverObserver(scrollView)
+        rowsScrollObserver = observeSidebarListScroll(scrollView, replacing: rowsScrollObserver) { syncHoverState() }
 
         section.addSubview(scrollView)
         listContainer.addSubview(section)
@@ -108,12 +90,6 @@ class ExceptionsTab {
             listContainer.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             listContainer.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             listContainer.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
-            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
-            documentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
-            rows.topAnchor.constraint(equalTo: documentView.topAnchor),
-            rows.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-            rows.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-            rows.bottomAnchor.constraint(lessThanOrEqualTo: documentView.bottomAnchor),
             section.topAnchor.constraint(equalTo: listContainer.topAnchor, constant: TableGroupView.padding),
             section.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: sidebarHorizontalPadding),
             section.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -sidebarHorizontalPadding),
@@ -182,10 +158,11 @@ class ExceptionsTab {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 2), in: sender)
     }
 
+    // periphery:ignore:parameters sender - NSMenuItem target/action signature
     @objc private static func addFromDisk(_ sender: NSMenuItem) {
         let dialog = NSOpenPanel()
         dialog.allowsMultipleSelection = false
-        dialog.allowedFileTypes = ["app"]
+        dialog.allowedContentTypes = [.application]
         dialog.canChooseDirectories = false
         dialog.beginSheetModal(for: SettingsWindow.shared) {
             if $0 == .OK, let url = dialog.url, let bundleId = Bundle(url: url)?.bundleIdentifier {
@@ -267,6 +244,21 @@ class ExceptionsTab {
         Preferences.set("exceptions", items)
     }
 
+    static func registerSidebarRowsSearchContent() {
+        rows.forEach { $0.registerSearchContent() }
+    }
+
+    /// Rows resolve their app name one by one, off-main. Each would re-index the section, and re-run an active
+    /// search, so the requests of one main-loop turn share a single refresh.
+    private static func scheduleSearchContentRefresh() {
+        guard !searchContentRefreshScheduled else { return }
+        searchContentRefreshScheduled = true
+        DispatchQueue.main.async {
+            searchContentRefreshScheduled = false
+            SettingsWindow.shared?.refreshSectionSearchContent("exceptions")
+        }
+    }
+
     private static func refreshSidebarRows() {
         guard let rowsStack else { return }
         setHoveredRow(nil)
@@ -304,6 +296,7 @@ class ExceptionsTab {
             }
         }
         syncHoverState()
+        scheduleSearchContentRefresh()
     }
 
     private static func applyContent(_ row: SidebarListRow, index: Int) {
@@ -314,14 +307,15 @@ class ExceptionsTab {
         // Avoids the placeholder-then-resolve flash on edits that don't change app identity.
         if row.resolvedToken == bundleId {
             row.setSummary(summary)
+            scheduleSearchContentRefresh()
             return
         }
         // BundleId changed (or first paint): show a synchronous placeholder, then resolve async.
         row.setIcon(AppDisplayInfo.genericIcon, size: iconSize)
         row.setContent(bundleId, summary)
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak row] in
             let info = AppDisplayInfo.resolve(bundleId: bundleId)
-            DispatchQueue.main.async { [weak row] in
+            DispatchQueue.main.async {
                 guard let row else { return }
                 guard let currentIndex = rows.firstIndex(where: { $0 === row }),
                       currentIndex < items.count,
@@ -329,6 +323,7 @@ class ExceptionsTab {
                 row.setIcon(info.icon, size: iconSize)
                 row.setContent(info.name, summaryString(for: items[currentIndex]))
                 row.markResolved(token: bundleId)
+                scheduleSearchContentRefresh()
             }
         }
     }
@@ -376,50 +371,29 @@ class ExceptionsTab {
         return parts.joined(separator: " • ")
     }
 
-    private static func installHoverObserver(_ scrollView: NSScrollView) {
-        if let rowsScrollObserver {
-            NotificationCenter.default.removeObserver(rowsScrollObserver)
-        }
-        rowsScrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main) { _ in
-            syncHoverState()
-        }
-    }
-
     private static func setHoveredRow(_ row: SidebarListRow?) {
         rows.forEach { $0.setHovered($0 === row) }
     }
 
     private static func syncHoverState() {
         guard let rowsScrollView else { return }
-        setHoveredRow(hoveredRowAtCursor(rowsScrollView))
-    }
-
-    private static func hoveredRowAtCursor(_ scrollView: NSScrollView) -> SidebarListRow? {
-        guard let window = scrollView.window else { return nil }
-        let cursorInScrollView = scrollView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        guard scrollView.bounds.contains(cursorInScrollView) else { return nil }
-        guard let documentView = scrollView.documentView else { return nil }
-        let cursorInDocumentView = documentView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        return enclosingSidebarRow(documentView.hitTest(cursorInDocumentView))
-    }
-
-    private static func enclosingSidebarRow(_ view: NSView?) -> SidebarListRow? {
-        var current = view
-        while let candidate = current {
-            if let row = candidate as? SidebarListRow {
-                return row
-            }
-            current = candidate.superview
-        }
-        return nil
+        setHoveredRow(sidebarListRowAtCursor(rowsScrollView))
     }
 }
+
+#if DEBUG
+extension ExceptionsTab {
+    static func qaClearHover() {
+        setHoveredRow(nil)
+    }
+}
+#endif
 
 struct AppDisplayInfo {
     let name: String
     let icon: NSImage
 
-    static let genericIcon: NSImage = NSWorkspace.shared.icon(forFileType: "app")
+    static let genericIcon: NSImage = NSWorkspace.shared.icon(for: .application)
 
     static func resolve(bundleId: String) -> AppDisplayInfo {
         guard !bundleId.isEmpty else {

@@ -22,8 +22,9 @@ class ProTransitionScheduler {
 
     /// Fire now if a missed wake-up was persisted, then schedule the next one.
     func onAppLaunchComplete() {
+        guard !state.onboardingInProgress else { cancel(); return }
         let saved = defaults.double(forKey: Self.nextScheduledDateKey)
-        if saved > 0 && Date(timeIntervalSince1970: saved) <= Date() {
+        if saved > 0 && Date(timeIntervalSince1970: saved) <= licenseManager.clock.now {
             onFire()
         }
         scheduleNext()
@@ -44,7 +45,7 @@ class ProTransitionScheduler {
             return
         }
         defaults.set(fireDate.timeIntervalSince1970, forKey: Self.nextScheduledDateKey)
-        let delay = max(0, fireDate.timeIntervalSinceNow)
+        let delay = max(0, fireDate.timeIntervalSince(licenseManager.clock.now))
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.onFire()
@@ -57,12 +58,13 @@ class ProTransitionScheduler {
     /// Compute the next date when a time-based prompt should fire.
     func computeNextFireDate() -> Date? {
         if case .pro = licenseManager.state { return nil }
+        if state.onboardingInProgress { return nil }
         if state.userOptedOut && state.hasSeenDay35 { return nil }
         guard let trialStart = licenseManager.trialStartDate else { return nil }
 
         // Day 1: Welcome (immediate)
         if !state.hasSeenWelcome {
-            return Date()
+            return licenseManager.clock.now
         }
 
         var candidates = [Date]()
@@ -84,7 +86,8 @@ class ProTransitionScheduler {
 
         // Day 21+: Reminder (skip once Day 35 shown)
         if !state.hasSeenDay21 && !state.hasSeenDay35 {
-            if let d = nextTimeWindow(onOrAfterDay: 20, trialStart: trialStart) {
+            if let d = nextTimeWindow(onOrAfterDay: 20, trialStart: trialStart),
+               d < trialStart.addingTimeInterval(34 * 86400) {
                 candidates.append(d)
             }
         }
@@ -105,7 +108,7 @@ class ProTransitionScheduler {
     /// Find the next 10:00 or 15:30 that falls on or after the given trial day.
     private func nextTimeWindow(onOrAfterDay trialDay: Int, trialStart: Date) -> Date? {
         let cal = Calendar.current
-        let now = Date()
+        let now = licenseManager.clock.now
         let targetDate = trialStart.addingTimeInterval(Double(trialDay) * 86400)
         let startDate = max(targetDate, now)
 

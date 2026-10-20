@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart TD
-    Start([App launched]) --> A["<b>[A] Welcome Letter</b><br/>Day 1<br/>(copy varies by fresh install vs upgrade)"]
+    Start([App launched]) --> A["<b>[A] Welcome Letter</b><br/>Day 1<br/>(updates only; new installs get the trial in the onboarding popover)"]
     A --> Day4Check{"Day 4<br/>first switcher open?"}
     Day4Check -->|Yes| H["<b>[H] Day 4 Pro Tour Popover</b>"]
     Day4Check -->|"No switcher use"| SkipH["Skipped"]
@@ -88,10 +88,10 @@ flowchart TD
 
 | | **[A] Welcome Letter** | **[H] Day 4 Pro Tour** | **[B] Day 12 Heads-Up** | **[C] Full Upgrade** | **[D] Proactive Day 15** | **[E] Hard-Gate Popover** | **[F] Day 21 Reminder** | **[G] Day 35 Final** |
 |---|---|---|---|---|---|---|---|---|
-| **Trigger** | First launch after install or update — copy varies by which (fresh install detected via nil `preferencesVersion` at migration) | First switcher open on Day 4 (after dismissal + 1s) | Day 12, at 10–11:30 or 15:30–17:00 | First hard-gated feature after free pass used; or first hard-gate if [D] was shown but free pass not yet used → free pass fires first, then [C]. Also: first switcher open after Day 15 → free-pass + [C] (after dismissal + 1s), for any user (engaged users see a tailored header from `remembered*`; non-engaged users see the `.nonEngaged` fallback) | Day 15+, at 10–11:30 or 15:30–17:00, if no hard-gated feature triggered yet | Any hard-gated feature attempt after [C] has been shown | Day 21+, at 10–11:30 or 15:30–17:00, if user used AltTab today | Day 35+, at 10–11:30 or 15:30–17:00, if user used AltTab today |
+| **Trigger** | First launch after install or update — copy varies by which (fresh install detected via nil `preferencesVersion` at migration). A launch that ends on the onboarding popover (a new user's unfinished first launch) never shows it: the popover announces the trial instead and sets `hasSeenWelcome`. So in practice only existing users updating see the letter | First switcher open on Day 4 (after dismissal + 1s) | Day 12, at 10–11:30 or 15:30–17:00 | First hard-gated feature after free pass used; or first hard-gate if [D] was shown but free pass not yet used → free pass fires first, then [C]. Also: first switcher open after Day 15 → free-pass + [C] (after dismissal + 1s), for any user (engaged users see a tailored header from `remembered*`; non-engaged users see the `.nonEngaged` fallback) | Day 15+, at 10–11:30 or 15:30–17:00, if no hard-gated feature triggered yet | Any hard-gated feature attempt after [C] has been shown | Day 21+, at 10–11:30 or 15:30–17:00, if user used AltTab today | Day 35+, at 10–11:30 or 15:30–17:00, if user used AltTab today |
 | **If missed** | N/A — always shows | No retry — only fires when switcher is opened on Day 4 | Try 15:30–17:00; then skip entirely | N/A — user-initiated | Try 15:30–17:00; retry next active day until shown or System 2 fires | N/A — user-initiated | Retry daily; skip if Day 35 arrives first | Retry daily; give up at Day 49 |
 | **UI type** | NSWindow, non-modal | NSPopover → menubar icon | NSPopover → menubar icon | NSWindow, non-modal | NSWindow, non-modal | NSPopover → menubar icon | NSPopover → menubar icon | NSWindow, non-modal |
-| **Position** | Centered | Below menubar icon ↑ | Below menubar icon ↑ | Centered | Centered | Below menubar icon ↑ | Below menubar icon ↑ | Centered |
+| **Position** | Centered | Below menubar icon ↑ (¹) | Below menubar icon ↑ (¹) | Centered | Centered | Below menubar icon ↑ (¹) | Below menubar icon ↑ (¹) | Centered |
 | **Size** | ~560 × 520pt | ~280 × 110pt | ~280 × 100pt | ~440 × 340pt | ~380 × 280pt | ~280 × 100pt | ~300 × 140pt | ~380 × 280pt |
 | **Video/GIF** | No | No | No | No | No | No | No | No |
 | **Free vs Pro table** | Yes — 3–4 items per column with icons | No | No | No | No | No | No | No |
@@ -99,10 +99,12 @@ flowchart TD
 | **Usage stat** | No | No | No | Yes — "Your usage so far" lead-in + two-stat hero (window switches + Pro feature uses), single-column fallback if proCount = 0 | Yes — "Your usage so far" lead-in + two-stat hero (window switches + Pro feature uses), single-column fallback if proCount = 0 | No | Yes — two-line body with switch count and Pro feature uses count | Yes — "Your usage so far" lead-in + two-stat hero (window switches + Pro feature uses), single-column fallback if proCount = 0 |
 | **Feature highlighting** | Yes — comparison table | No | No | No — replaced by hero usage stat | No | No | No | No |
 | **Text content** | App icon; comparison table; "Start my 14-day trial" button. Two variants — **upgrade** (existing prefs file): "AltTab now has a Pro tier" + 14-day framing + open-source/one-time-purchase reassurance. **New install** (no prior prefs): "Welcome to AltTab" + short "free, open-source switcher with 14-day Pro trial" intro. No "See Pro in action" link in either. | "Your trial includes Pro features."; "Try these in the next 10 days:"; bulleted list (App Icons / Titles styles, Additional shortcuts, Search) | "Your Pro trial ends in 2 days"; subtitle from ProConversionCopy.day12Subtitle(); two-button: "Not now" + "Get Pro". | Header resolved by priority: extra shortcut → "Unlock extra shortcuts with Pro"; search / search-on-release → "Unlock Search with Pro"; App Icons or Titles → "Unlock App Icons and Titles with Pro"; fallback → "Get more from AltTab with Pro". "Your usage so far" lead-in + two-stat hero (window switches + Pro feature uses). Supporting line for engaged users: "Some Pro features have reverted to free defaults." plus a feature-specific sentence ("Extra shortcuts are a Pro feature." / "Search is a Pro feature." / no second line for App Icons / Titles). Non-engaged users see only the aspirational line: "AltTab Pro adds 4 features beyond the free switcher." | "Your 14-day Pro trial just ended"; two-stat hero (window switches + Pro feature uses); "Some Pro features have reverted to free defaults." | Title resolved by the same priority as [C]. Optional body for .feature triggers: "Free pass used. Upgrade to keep using it." | "AltTab Pro — a quick reminder"; two-line body: "{N} window switches with AltTab — {M} used Pro features." / "They're still here whenever you're ready." | "Still interested in Pro?"; two-stat hero (window switches + Pro feature uses); "Pro is still here whenever you're ready." |
-| **Primary action** | **"Start my 14-day trial"** — prominent, closes window | None (informational) | **"Get Pro"** — small → LemonSqueezy | **"Get Pro"** — accent color → LemonSqueezy | **"Get Pro"** → LemonSqueezy | **"Get Pro"** — small → LemonSqueezy | **"Get Pro"** — small → LemonSqueezy | **"Get Pro"** → LemonSqueezy |
+| **Primary action** | **"Start my 14-day trial"** — prominent, closes window | None (informational) | **"Get Pro"** — small → /pricing | **"Get Pro"** — accent color → /pricing | **"Get Pro"** → /pricing | **"Get Pro"** — small → /pricing | **"Get Pro"** — small → /pricing | **"Get Pro"** → /pricing |
 | **Secondary action** | None | None | **"Not now"** — text link | **"Continue with Free"** — text link | **"Maybe later"** — text link | **"Not now"** — text link | **"Not now"** — text link | **"No thanks — don't ask again"** — text link → permanent opt-out, no confirmation |
 | **Dismiss behavior** | ⨉ = same as "Start my 14-day trial" | Click outside | Click outside | ⨉ = same as "Continue with Free" | ⨉ = same as "Maybe later" | Click outside | Click outside | ⨉ = "Not now" (does NOT opt out; `hasSeenDay35` set, no repeat, but [E] continues) |
 | **Frequency** | Once ever | Once ever | Once ever | Once ever | Once ever | Fires on every post-[C] hard-gate attempt | Once ever | Once ever |
+
+(¹) Without the arrow, centered under the menu bar, when the icon is hidden or macOS never shows it (`AnchoredPopoverSpecs.md`).
 
 ---
 
@@ -153,11 +155,33 @@ The first post-expiration switcher open always triggers free-pass + `[C]` (one-s
 
 ---
 
+## Checkout origin
+
+Every "Get Pro" opens `/pricing?via=<day>-<code>`: `LicenseManager.trialDay` in plain digits, then the entry point's
+code below (Day 35 window clicked on day 35 → `35-a6`). Without a trial start it's `<code>` alone. The website splits
+the two and copies them into the Paddle checkout's custom data, so each sale records which entry point led to it and
+on which day of the trial, including clicks the user made unprompted (menubar, Settings). The update check sends the
+same day as `day`. Codes are opaque so the URL doesn't expose the prompt schedule. The website accepts only this
+list; a retired code is never reused.
+
+| Code | Entry point |
+|---|---|
+| `a1` | [B] Day 12 Heads-Up |
+| `a2` | [C] Full Upgrade |
+| `a3` | [D] Proactive Day 15 |
+| `a4` | [E] Hard-Gate Popover |
+| `a5` | [F] Day 21 Reminder |
+| `a6` | [G] Day 35 Final |
+| `a7` | Settings, Upgrade tab |
+| `a8` | Menubar "Get Pro" item |
+
+---
+
 ## Test scenarios
 
 Mirrors `ProTransitionTests.swift` 1:1. The tests drive `ProTransitionManagerTestable` — a pure state
 struct + decision functions (`evaluateTimedAction`, `evaluateHardGate`, `evaluateSwitcherOpen`,
-`shouldShowBadgeDot`, `isSchedulingComplete`, `isInTimeWindow`) — so the entire flow above is verified
+`shouldShowBadgeDot`, `isInTimeWindow`) — so the entire flow above is verified
 deterministically without AppKit, windows, or real time.
 
 ### Timed action: Day 1 Welcome
@@ -207,9 +231,6 @@ deterministically without AppKit, windows, or real time.
 ### Badge dot
 - **testBadgeDot_showsOnDays13and14** · **testBadgeDot_notShownBeforeDay13** · **testBadgeDot_removedOnDay15** · **testBadgeDot_notShownForProUser**
 
-### Scheduling completeness
-- **testSchedulingComplete_forProUser** · **testSchedulingComplete_afterOptOutAndDay35** · **testSchedulingNotComplete_optedOutButDay35NotShown** · **testSchedulingComplete_allEventsShown** · **testSchedulingComplete_allEventsShown_fullUpgradeInsteadOfProactive**
-
 ### Time window (10:00–11:30 / 15:30–17:00)
 - **testTimeWindow_10am** · **testTimeWindow_1130am** · **testTimeWindow_330pm** · **testTimeWindow_4pm** · **testTimeWindow_5pm** — inside.
 - **testTimeWindow_9am_outside** · **testTimeWindow_1131am_outside** · **testTimeWindow_1pm_gap** · **testTimeWindow_2pm_outside** · **testTimeWindow_230pm_outside** · **testTimeWindow_329pm_outside** · **testTimeWindow_501pm_outside** · **testTimeWindow_midnight** — outside.
@@ -236,11 +257,12 @@ deterministically without AppKit, windows, or real time.
 ### Day 35 retry window
 - **testDay35_retriesOnDay36** · **testDay35_retriesOnDay48**
 
-### Day 49 give-up
-- **testSchedulingComplete_pastDay49EvenWithoutDay35**
-
 ### Day 12 skip-entirely
 - **testDay12_skipsEntirelyOnDay13** · **testDay12_skipsEntirelyOnDay14**
 
 ### Day 15 Proactive — direct coverage
 - **testDay15_proactiveNotShownIfAlreadySeen** · **testDay15_proactiveShowsOnLaterDayIfStillNotShown**
+
+### Checkout origin
+- **testCheckoutUrl_carriesOriginAndTrialDayAsVia** — "Get Pro" opens `/pricing?via=<day>-<code>`; day 1, 35, 100, and no day.
+- **testCheckoutOrigin_codesMatchTheWebsiteList** — pins the codes the website accepts.

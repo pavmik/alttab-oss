@@ -6,6 +6,11 @@ class PreviewPanel: NSPanel {
     private static var currentId: CGWindowID?
     static var shared: PreviewPanel!
 
+    /// `.titled` would make it eligible, and the preview outlives the switcher after a focus (`beginHideUi`'s
+    /// `keepPreview`): ordering out the key `TilesPanel` once the target is front made AppKit hand key to this
+    /// panel, so AltTab took the keyboard back from the window just focused (#6113, QA S-21).
+    override var canBecomeKey: Bool { false }
+
     /// this allows the window to be above the menubar when its origin.y is set to 0
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
@@ -13,19 +18,11 @@ class PreviewPanel: NSPanel {
 
     convenience init() {
         self.init(contentRect: .zero, styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView], backing: .buffered, defer: false)
-        isFloatingPanel = true
-        animationBehavior = .none
-        hidesOnDeactivate = false
-        titleVisibility = .hidden
+        applyFloatingPanelChrome()
         titlebarAppearsTransparent = true
-        backgroundColor = .clear
         contentView = Self.previewView
         Self.borderView.autoresizingMask = [.width, .height]
         Self.previewView.addSubview(Self.borderView)
-        // triggering AltTab before or during Space transition animation brings the window on the Space post-transition
-        collectionBehavior = .canJoinAllSpaces
-        // helps filter out this window from the thumbnails
-        setAccessibilitySubrole(.unknown)
         Self.shared = self
     }
 
@@ -86,6 +83,7 @@ class PreviewPanel: NSPanel {
         // Always use the primary screen as reference since all coordinates are relative to it
         frame.origin.y = NSScreen.screens.first!.frame.maxY - frame.maxY
         Self.shared.setFrame(frame, display: false)
+        SearchDiscoveryHint.shared.refreshAfterVisibleWork()
     }
 }
 

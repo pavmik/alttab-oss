@@ -123,6 +123,9 @@ class ProTransitionManager {
     // session-only: action queued during showUi to fire 1s after dismissal. Used by both the free-pass
     // ladder ([C] Full Upgrade) and the Day 4 mid-trial tour ([H] popover).
     private var pendingDismissAction: PendingDismissAction?
+    private var deferredPrompt: DispatchWorkItem?
+    private var switcherIsShown = false
+    var hasPendingPrompt: Bool { pendingDismissAction != nil }
 
     /// Session-scoped: true between the moment a free-pass is granted (either via the
     /// post-expiration switcher trigger in `onSwitcherShown` or via an explicit hard-gate
@@ -141,20 +144,23 @@ class ProTransitionManager {
     }
 
     private func emit(_ action: ProPromptAction) {
+        #if DEBUG
+        if QaLifecycle.enabled { QaLifecycle.actions.append(String(describing: action)) }
+        #endif
         onAction?(action)
     }
 
-    // MARK: - Pass-through accessors for external callers (QAMenu, Day35FinalWindow, etc.)
-
+    // Pass-through accessors. The setters are what `QAMenu`'s Reset row writes, so they only look
+    // unused to a scan of the Release scheme, where `QAMenu.swift` is compiled out by its `#if DEBUG`.
     var hasSeenWelcome: Bool { get { state.hasSeenWelcome } set { state.hasSeenWelcome = newValue } }
+    // periphery:ignore - written by QAMenu, which the Release scheme compiles out
     var hasSeenDay4Tour: Bool { get { state.hasSeenDay4Tour } set { state.hasSeenDay4Tour = newValue } }
+    // periphery:ignore - written by QAMenu, which the Release scheme compiles out
     var hasSeenDay12: Bool { get { state.hasSeenDay12 } set { state.hasSeenDay12 = newValue } }
+    // periphery:ignore - written by QAMenu, which the Release scheme compiles out
     var freePassUsed: Bool { get { state.freePassUsed } set { state.freePassUsed = newValue } }
-    var hasSeenFullUpgrade: Bool { get { state.hasSeenFullUpgrade } set { state.hasSeenFullUpgrade = newValue } }
-    var hasSeenProactiveDay15: Bool { get { state.hasSeenProactiveDay15 } set { state.hasSeenProactiveDay15 = newValue } }
-    var hasSeenDay21: Bool { get { state.hasSeenDay21 } set { state.hasSeenDay21 = newValue } }
-    var hasSeenDay35: Bool { get { state.hasSeenDay35 } set { state.hasSeenDay35 = newValue } }
     var userOptedOut: Bool { get { state.userOptedOut } set { state.userOptedOut = newValue } }
+    // periphery:ignore - written by QAMenu, which the Release scheme compiles out
     var hasTriggeredPostExpirationSwitcher: Bool { get { state.hasTriggeredPostExpirationSwitcher } set { state.hasTriggeredPostExpirationSwitcher = newValue } }
 
     var shouldShowBadgeDot: Bool {
@@ -170,6 +176,10 @@ class ProTransitionManager {
     func onLicenseStateChanged() {
         if case .pro = LicenseManager.shared.state {
             scheduler.cancel()
+            deferredPrompt?.cancel()
+            deferredPrompt = nil
+            pendingDismissAction = nil
+            isFreePassSessionActive = false
             emit(.dismissAllProWindows)
             emit(.refreshBadge)
         }
@@ -184,24 +194,36 @@ class ProTransitionManager {
 
     /// Called from App.hideUi() when the switcher panel is dismissed.
     func onSwitcherDismissed() {
+        switcherIsShown = false
         // End any active free-pass session — the next switcher open should see the free-tier read.
         isFreePassSessionActive = false
-        guard let action = pendingDismissAction else { return }
+        deferredPrompt?.cancel()
+        guard pendingDismissAction != nil else { return }
+        // Delay so the focused window has time to come to front before our window appears above it.
+        let item = DispatchWorkItem { [weak self] in self?.showDeferredPrompt() }
+        deferredPrompt = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: item)
+    }
+
+    private func showDeferredPrompt() {
+        guard !switcherIsShown, let action = pendingDismissAction else { return }
         pendingDismissAction = nil
-        // delay so the focused window has time to come to front before our window appears above it
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            switch action {
-            case .showFullUpgrade(let feature):
-                self.showFullUpgradeWindow(for: feature)
-            case .showDay4Tour:
-                self.emit(.showDay4Tour)
-            }
+        deferredPrompt = nil
+        if case .pro = LicenseManager.shared.state { return }
+        switch action {
+        case .showFullUpgrade(let feature): showFullUpgradeWindow(for: feature)
+        case .showDay4Tour:
+            guard LicenseManager.shared.daysSinceTrialStart == 3 else { return }
+            emit(.showDay4Tour)
         }
     }
 
     /// Called from App.showUiOrCycleSelection() at the start of a fresh switcher session (not on cycle).
     /// Decides whether to queue a Day 4 tour or a post-expiration free-pass + [C] for after dismissal.
     func onSwitcherShown() {
+        switcherIsShown = true
+        deferredPrompt?.cancel()
+        deferredPrompt = nil
         let action = ProTransitionManagerTestable.evaluateSwitcherOpen(currentState())
         switch action {
         case .showDay4Tour:
@@ -303,13 +325,23 @@ class ProTransitionManager {
 
     // MARK: - Checkout helper
 
-    static func openCheckout() {
-        NSWorkspace.shared.open(URL(string: Endpoints.checkoutUrl)!)
+    static func openCheckout(from origin: CheckoutOrigin) {
+        NSWorkspace.shared.open(Endpoints.checkoutUrl(from: origin, trialDay: LicenseManager.shared.trialDay))
     }
 
     // MARK: - QA / Debug
 
     #if DEBUG
+    func clearSessionForQa() {
+        scheduler.cancel()
+        deferredPrompt?.cancel()
+        deferredPrompt = nil
+        pendingDismissAction = nil
+        switcherIsShown = false
+        isFreePassSessionActive = false
+        state.onboardingInProgress = false
+    }
+
     func resetAllState() {
         // Restore any snapshotted Pro selections first so Settings reflects the pre-lock state.
         onProUnlocked()
@@ -318,10 +350,6 @@ class ProTransitionManager {
         // Now that the flags are cleared, post again so observers re-render with the fresh state.
         NotificationCenter.default.post(name: Self.proLockStateDidChangeNotification, object: nil)
         scheduler.scheduleNext()
-    }
-
-    func showComponent(_ show: @autoclosure () -> Void) {
-        show()
     }
     #endif
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import Sparkle
+import UniformTypeIdentifiers
 
 class GeneralTab {
     static var menubarIconDropdown: NSPopUpButton?
@@ -20,22 +21,24 @@ class GeneralTab {
             ])
         let language = TableGroupView.Row(leftTitle: NSLocalizedString("Language", comment: ""),
             rightViews: [LabelAndControl.makeDropdown("language", LanguagePreference.allCases, extraAction: setLanguageCallback)])
+        #if !OSS
         updatesPolicyDropdown = LabelAndControl.makeDropdown("updatePolicy", UpdatePolicyPreference.allCases)
         let checkForUpdates = NSButton(title: NSLocalizedString("Check for updates now…", comment: ""), target: nil, action: nil)
         checkForUpdates.onAction = { control in checkForUpdatesNow(control) }
+        #endif
         crashPolicyDropdown = LabelAndControl.makeDropdown("crashPolicy", CrashPolicyPreference.allCases)
         let crashPolicy = TableGroupView.Row(leftTitle: NSLocalizedString("Crash reports policy", comment: ""),
             rightViews: [crashPolicyDropdown!])
         for i in 0..<MenubarIconPreference.allCases.count {
             let image = NSImage.initCopy("menubar-\(i)")
-            image.isTemplate = i < 2
+            image.isTemplate = MenubarIconPreference.allCases[i].isTemplate
             image.size = NSSize(width: 22, height: 22)
             menubarIconDropdown!.item(at: i)!.image = image
         }
         let cell = menubarIconDropdown!.cell! as! NSPopUpButtonCell
         cell.bezelStyle = .regularSquare
         cell.arrowPosition = .arrowAtBottom
-        cell.imagePosition = .imageOverlaps
+        cell.imagePosition = .imageOnly
         let captureWindowsInBackground = TableGroupView.Row(leftTitle: NSLocalizedString("Capture windows in the background", comment: ""),
             subTitle: NSLocalizedString("When disabled, avoids the macOS purple screen-recording indicator, and avoids flickers when playing DRM video. Thumbnails will be less up-to-date.", comment: ""),
             rightViews: [LabelAndControl.makeSwitch("captureWindowsInBackground")])
@@ -46,11 +49,13 @@ class GeneralTab {
         table.addNewTable()
         table.addRow(language)
         table.addNewTable()
+        #if !OSS
         table.addRow(leftViews: [TableGroupView.makeText(NSLocalizedString("Updates policy", comment: ""))],
             rightViews: [updatesPolicyDropdown!],
             secondaryViews: [checkForUpdates],
             secondaryViewsAlignment: .right,
             secondaryViewsTopGap: 8)
+        #endif
         table.addRow(crashPolicy)
         let exportButton = NSButton(title: NSLocalizedString("Export settings…", comment: ""), target: nil, action: nil)
         exportButton.onAction = { _ in exportSettings() }
@@ -58,7 +63,7 @@ class GeneralTab {
         importButton.onAction = { _ in importSettings() }
         let resetButton = NSButton(title: NSLocalizedString("Reset settings and restart…", comment: ""), target: nil, action: nil)
         resetButton.bezelStyle = .rounded
-        if #available(macOS 11.0, *) { resetButton.hasDestructiveAction = true }
+        resetButton.hasDestructiveAction = true
         resetButton.onAction = { _ in resetPreferences() }
         let tools = StackView([exportButton, importButton, resetButton], .horizontal)
         let view = TableGroupSetView(originalViews: [table, tools], padding: 0, bottomPadding: 0)
@@ -87,7 +92,7 @@ class GeneralTab {
         let cancelButton = alert.addButton(withTitle: NSLocalizedString("Cancel", comment: ""))
         cancelButton.keyEquivalent = "\u{1b}" // Escape
         let resetButton = alert.addButton(withTitle: NSLocalizedString("Reset settings and restart", comment: ""))
-        if #available(macOS 11.0, *) { resetButton.hasDestructiveAction = true }
+        resetButton.hasDestructiveAction = true
         if alert.runModal() == .alertSecondButtonReturn {
             Preferences.resetAll()
             App.restart()
@@ -104,14 +109,14 @@ class GeneralTab {
     private static func exportSettings() {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "\(App.bundleIdentifier).plist"
-        panel.allowedFileTypes = ["plist"]
+        panel.allowedContentTypes = [.propertyList]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         NSDictionary(dictionary: Preferences.all).write(to: url, atomically: true)
     }
 
     private static func importSettings() {
         let panel = NSOpenPanel()
-        panel.allowedFileTypes = ["plist"]
+        panel.allowedContentTypes = [.propertyList]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let dict = NSDictionary(contentsOf: url) as? [String: Any] else {
@@ -137,12 +142,9 @@ class GeneralTab {
         }
     }
 
+    // periphery:ignore:parameters sender - LabelAndControl callback signature
     static func setLanguageCallback(_ sender: NSControl) {
-        if Preferences.language == .systemDefault {
-            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
-        } else {
-            UserDefaults.standard.set([Preferences.language.appleLanguageCode!], forKey: "AppleLanguages")
-        }
+        Preferences.language.applyToAppleLanguages()
         // Inform the user that the app needs to restart to apply the language change
         let alert = NSAlert()
         alert.alertStyle = .informational

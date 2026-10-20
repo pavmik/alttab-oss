@@ -1,14 +1,23 @@
 enum MenubarIconPreference: CaseIterable, MacroPreference {
+    // Persisted indices and menubar-N.pdf assets share this order; preserve it across icon redesigns.
     case outlined
     case filled
     case colored
+    case legacyOutlined
+    case legacyFilled
+    case legacyColored
+
+    var isTemplate: Bool { self != .colored && self != .legacyColored }
 
     var localizedString: LocalizedString {
         switch self {
-            // these spaces are different from each other; they have to be unique
+            // NSPopUpButton requires unique titles, including the image-only choices.
             case .outlined: return " "
             case .filled: return " "
             case .colored: return " "
+            case .legacyOutlined: return "  "
+            case .legacyFilled: return "  "
+            case .legacyColored: return "  "
         }
     }
 }
@@ -95,6 +104,16 @@ enum LanguagePreference: CaseIterable, MacroPreference {
     var appleLanguageCode: String? {
         Self.metadata[self]!.code
     }
+
+    /// AppKit resolves which `.lproj` the app loads from `AppleLanguages` at launch, so writing it
+    /// only takes effect after a restart. `.systemDefault` means removing the key, not writing one.
+    func applyToAppleLanguages() {
+        if self == .systemDefault {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([appleLanguageCode!], forKey: "AppleLanguages")
+        }
+    }
 }
 
 enum ShortcutStylePreference: CaseIterable, SfSymbolMacroPreference {
@@ -153,12 +172,16 @@ enum AppsToShowPreference: CaseIterable, MacroPreference {
     case all
     case active
     case nonActive
+    case underCursor
+    case appUnderCursor
 
     var localizedString: LocalizedString {
         switch self {
             case .all: return NSLocalizedString("All apps", comment: "")
             case .active: return NSLocalizedString("Active app", comment: "")
             case .nonActive: return NSLocalizedString("Non-active apps", comment: "")
+            case .underCursor: return NSLocalizedString("Windows under the cursor", comment: "")
+            case .appUnderCursor: return NSLocalizedString("App under the cursor", comment: "")
         }
     }
 }
@@ -223,7 +246,7 @@ enum GroupAppsPreference: CaseIterable, MacroPreference {
 
     var localizedString: LocalizedString {
         switch self {
-            case .mainWindow: return NSLocalizedString("Show main window", comment: "")
+            case .mainWindow: return NSLocalizedString("Show one window per app", comment: "")
             case .allWindows: return NSLocalizedString("Show all windows", comment: "")
         }
     }
@@ -326,33 +349,6 @@ enum AppearanceSizePreference: CaseIterable, SfSymbolMacroPreference {
             case .medium: return .moonphaseLastQuarterInverse
             case .large: return .moonphaseWaningCrescentInverse
             case .auto: return .sparkles
-        }
-    }
-}
-
-enum ThemePreference: CaseIterable, ImageMacroPreference {
-    case macOs
-    case windows10
-
-    var localizedString: LocalizedString {
-        switch self {
-            case .macOs: return " macOS"
-            case .windows10: return "❖ Windows 10"
-        }
-    }
-
-    var image: WidthHeightImage {
-        switch self {
-            case .macOs: return WidthHeightImage(name: "macos")
-            case .windows10: return WidthHeightImage(name: "windows10")
-        }
-    }
-
-    // periphery:ignore
-    var themeParameters: ThemeParameters {
-        switch self {
-            case .macOs: return ThemeParameters(label: localizedString, cellCornerRadius: 10, windowCornerRadius: 23)
-            case .windows10: return ThemeParameters(label: localizedString, cellCornerRadius: 0, windowCornerRadius: 0)
         }
     }
 }
@@ -461,13 +457,6 @@ struct WidthHeightImage {
         self.height = height
         self.name = name
     }
-}
-
-// periphery:ignore
-struct ThemeParameters {
-    let label: String
-    let cellCornerRadius: CGFloat
-    let windowCornerRadius: CGFloat
 }
 
 typealias LocalizedString = String
