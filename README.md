@@ -6,6 +6,12 @@ This fork keeps the original AltTab experience while providing an unrestricted o
 
 The current fork is based on upstream **11.9.2**.
 
+## Who this fork is for
+
+This fork is for people who want to keep the familiar AltTab window-switching experience with all features available for free. Its goal is to preserve that experience and follow upstream fixes, without adding extra features of its own.
+
+If you are open to a different window switcher, [BetterCmdTab](https://github.com/rokartur/BetterCmdTab) looks like a promising free, open-source alternative. It offers list, grid, and live-preview layouts, plus features such as browser tabs and window tiling. It requires macOS 13 or later. This is a suggestion to try, not a tested compatibility recommendation.
+
 ## Install
 
 Download the DMG from [Releases](https://github.com/pavmik/alttab-oss/releases), open it, and drag `AltTab OSS.app` to Applications. Release builds support Apple Silicon and Intel on macOS 12 or later.
