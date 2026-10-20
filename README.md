@@ -1,10 +1,16 @@
 # AltTab OSS
 
-AltTab OSS is an unofficial, source-only fork of [AltTab for macOS](https://github.com/lwouis/alt-tab-macos). It is not affiliated with or endorsed by the original AltTab project or its maintainers.
+AltTab OSS is an unofficial fork of [AltTab for macOS](https://github.com/lwouis/alt-tab-macos). It is not affiliated with or endorsed by the original AltTab project or its maintainers.
 
 This fork keeps the original AltTab experience while providing an unrestricted open-source build under the GNU General Public License v3.0. It uses the separate app name `AltTab OSS` and bundle identifier `com.frekr.alttab-oss`, so it can be tested independently from the official app.
 
-No prebuilt or signed application is provided. Build it locally if you want to use it.
+## Install
+
+Download the DMG from [Releases](https://github.com/pavmik/alttab-oss/releases), open it, and drag `AltTab OSS.app` to Applications. Release builds support Apple Silicon and Intel on macOS 12 or later.
+
+The app is ad-hoc signed, not Apple-notarized. macOS may require approval in System Settings > Privacy & Security after the first launch attempt. Grant Accessibility and Screen Recording permissions when prompted. Quit other window switchers before testing conflicting shortcuts.
+
+Automatic updates are disabled. Install newer releases manually. Source code for each binary is available at its release tag. Checksums are included with each release.
 
 ## Build locally
 
@@ -26,9 +32,13 @@ xcodebuild \
   -derivedDataPath DerivedData \
   CODE_SIGN_IDENTITY=- \
   OTHER_CODE_SIGN_FLAGS= \
+  MACOSX_DEPLOYMENT_TARGET=12.0 \
+  SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
   CURRENT_PROJECT_VERSION=11.5.0
 open "DerivedData/Build/Products/Debug/AltTab OSS.app"
 ```
+
+For a universal optimized build and DMG, run `bash scripts/package_oss_release.sh`. This requires Xcode and creates files in `dist/` without notarizing or uploading them.
 
 macOS will ask for Accessibility permission because a window switcher needs it to inspect and focus windows. Ad-hoc signing may cause macOS to ask for permission again after a rebuild.
 
@@ -46,6 +56,6 @@ All other functionality and most of the source come from the original AltTab pro
 
 ## License
 
-Copyright remains with the original contributors and later contributors to this fork. The project is distributed under the [GNU General Public License v3.0](LICENSE).
+Copyright remains with the original contributors and later contributors to this fork. The project is distributed under the [GNU General Public License v3.0](LICENCE.md).
 
 There is no warranty and no official support from the upstream AltTab maintainers.
